@@ -3,15 +3,6 @@
 
 Leveraging the power of ViT and SSL for a multi-task vision model that can perform pose estimation, object detection, and instance segmentation on a shared backbone. 
 
-                   ┌──────────────┐
-                   │ ViT Backbone │
-                   └─────┬────────┘
-                         │
-     ┌──────────┬────────┴──────────┬────────────┐
-     │          │                   │            │
-YOLOS Head   EoMT Head       TokenPose Head   ... (e.g. Action)
-(detection) (segmentation)   (keypoints)          
-
 ## Source Models
 
 ### Segmentation
