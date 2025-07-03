@@ -88,3 +88,26 @@ class AttentionHead(nn.Module):
         # Calculate the attention output
         attention_output = torch.matmul(attention_probs, value)
         return (attention_output, attention_probs)
+    
+
+class Backbone(nn.Module):
+    """
+    The backbone of the model.
+    This module contains the patch embeddings, positional embeddings, and multi-head attention.
+    """
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embeddings = Embeddings(config)
+        self.attention_heads = nn.ModuleList([
+            AttentionHead(config['hidden_size'], config['attention_head_size'], config['dropout'])
+            for _ in range(config['num_attention_heads'])
+        ])
+    
+    def forward(self, x):
+        # (batch_size, num_channels, image_size, image_size) -> (batch_size, num_patches+1, hidden_size)
+        x = self.embeddings(x)
+        # Apply each attention head
+        for head in self.attention_heads:
+            x, _ = head(x)
+        return x
