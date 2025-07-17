@@ -15,7 +15,7 @@ Leveraging the power of ViT and SSL for a multi-task vision model that can perfo
 
 [YOLOS](https://huggingface.co/docs/transformers/model_doc/yolos). Leverages plain ViT for object detection. 
 
-"""
+
 Essentially, the change from a pre-trained ViT to a YOLOS detector is embarrassingly simple: 
 
 	* YOLOS replaces one [CLS] token for image classification in ViT with one hundred [DET] tokens for object detection.
@@ -28,7 +28,7 @@ Essentially, the change from a pre-trained ViT to a YOLOS detector is embarrassi
 		* YOLOS wants to predict sents of objects (multiple boxes and classes) so it uses bipartite matching loss.(from DETR)
 
 		* YOLOS lets the transformer lear spatial structure on its own from data. No anchors, no grid cells, no 2D priors. 
-"""
+
 
 * bounding box regression heads are implemented by one MLP with separate parameters containing two hidden layers with
 intermediate ReLU [41] non-linearity activation functions.
