@@ -30,6 +30,9 @@ Essentially, the change from a pre-trained ViT to a YOLOS detector is embarrassi
 		* YOLOS lets the transformer lear spatial structure on its own from data. No anchors, no grid cells, no 2D priors. 
 """
 
+* bounding box regression heads are implemented by one MLP with separate parameters containing two hidden layers with
+intermediate ReLU [41] non-linearity activation functions.
+
 ### Pose/Keypoints
 
 [TokenPose](https://github.com/leeyegy/TokenPose)
