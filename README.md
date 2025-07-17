@@ -24,3 +24,7 @@ Leveraging the power of ViT and SSL for a multi-task vision model that can perfo
 	•	Feed them through the shared ViT encoder
 	
     •	Decode their spatial predictions using MLP heads or 1x1 convs over feature maps (via spatial map reconstruction or regression)
+
+[VitPose](https://arxiv.org/abs/2204.12484)
+
+* "It employs a standard, non-hierarchical ViT backbone and a simple decoder head to predict keypoint heatmaps from images. Despite its simplicity, ViTPose achieves top results on the MS COCO Keypoint Detection benchmark."
