@@ -3,6 +3,8 @@
 
 Leveraging the power of ViT and SSL for a multi-task vision model that can perform pose estimation, object detection, and instance segmentation on a shared backbone. 
 
+
+```
                    +-----------------+
 Input Image  --->  |   ViT Backbone  |  ---> Shared patch tokens
                    +-----------------+
@@ -12,6 +14,7 @@ Input Image  --->  |   ViT Backbone  |  ---> Shared patch tokens
             | ViTPose++ Head |   |  EOMT Head      |
             | Heatmap decode |   | Task/class tokens|
             +----------------+   +-----------------+
+```
 
 ## Source Models
 
