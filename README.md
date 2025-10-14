@@ -5,19 +5,18 @@ WiP
 Leveraging the power of ViT and SSL for a multi-task vision model that can perform pose estimation, object detection, and instance segmentation on a shared backbone. 
 
 
-```
-                   +-----------------+
-Input Image  --->  |   ViT Backbone  |  ---> Shared patch tokens
-                   +-----------------+
-                         /     \
-                        /       \
-            +----------------+   +-----------------+
-            | ViTPose++ Head |   |  EOMT Head      |
-            | Heatmap decode |   | Task/class tokens|
-            +----------------+   +-----------------+
-```
 
-## Source Models
+## RF-DETR-Seg
+
+This could be a great candidate for instance segmentation + detection. 
+
+We could then add the detection queries into [ED-POSE](https://github.com/IDEA-Research/ED-Pose). This approach extends the detection queries, to add a sequential query to find keypoints. 
+
+
+Other option could be [DETR-POSE](https://github.com/SebastianJanampa/DETRPose) which extends the set prediction problem to kpts. 
+
+
+## Other options
 
 ### Segmentation
 
@@ -60,3 +59,16 @@ intermediate ReLU [41] non-linearity activation functions.
 [VitPose](https://arxiv.org/abs/2204.12484)
 
 * "It employs a standard, non-hierarchical ViT backbone and a simple decoder head to predict keypoint heatmaps from images. Despite its simplicity, ViTPose achieves top results on the MS COCO Keypoint Detection benchmark."
+
+## Install
+
+### Mac M1
+conda env create -f vit-multitask-m1.yaml
+conda activate vit-multitask-m1
+python -m ipykernel install --user --name=vit-multitask-m1
+
+
+### Ubuntu
+conda env create -f vit-multitask-env.yaml
+conda activate vit-multitask
+python -m ipykernel install --user --name=vit-multitask
