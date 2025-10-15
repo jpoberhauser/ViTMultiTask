@@ -18,6 +18,23 @@ Other option could be [DETR-POSE](https://github.com/SebastianJanampa/DETRPose) 
 
 ## Other options
 
+
+
+### Segmentation plus Detection
+
+* RF-DETR-Seg is a great candidate for this. 
+
+### Integrating Keypoint Heads into a DETR Framework
+
+In DETR, each object query in the decoder produces an output embedding that is fed into lightweight heads (MLPs) for different predictions.
+
+By default, one 3-layer MLP outputs the bounding box (4 numbers) and another outputs the class scores. We can extend this design by adding another MLP head to each query’s output to predict keypoint coordinates. 
+
+For example, if we want  animal pose keypoints, a query could output $(x_1, y_1, x_2, y_2, \dots, x_K, y_K)$ for $K$ joints of that animal. In practice, researchers have implemented this in various ways. The ED-Pose method described above is one clear example: it attaches keypoint box regression to each query, effectively treating each keypoint like a small localized detection anchored to the person ￼. The model learns both the human’s bounding box and the keypoints in one go, using the same set of queries and the DETR bipartite matching paradigm for assignment of predictions to ground truth people ￼. Because DETR’s matching cost can be extended to include keypoint errors (or one can match primarily on boxes/class and then supervise keypoints after matching), the training can still find the correct query for each ground truth instance.
+
+
+### Other approaches 
+
 ### Segmentation
 
 [EoMT](https://huggingface.co/docs/transformers/main/model_doc/eomt). Encoder-only Mask Transformer (CVPR 2025 highlight)
