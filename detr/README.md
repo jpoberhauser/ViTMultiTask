@@ -67,4 +67,15 @@
 +------------------+------------------+--- ... ---+------------------+
 | Final Prediction 1| Final Prediction 2|   ...   | Final Prediction N |  <-- Class + Bounding Box, or "No Object" (∅) 
 +------------------+------------------+--- ... ---+------------------+
-(Trained End-to-End with Bipartite Matching Loss to enforce unique predictions) [1, 2, 12]
+(Trained End-to-End with Bipartite Matching Loss to enforce unique predictions) [cx, cy, w, h]
+
+
+## Main Recap on cost and loss
+
+* **cost** of assignment is class (prob(target)) + localization cost. (L1 + GIoU) --> Hungarian matching. 
+
+* boxes that match are foreground, the unassigned boxes are background. Model is trained then with classification **loss** (cross_entropy) and localization loss (smooth_l1 and GIoU Loss) 
+
+    * decoder layer outputs go into **auxiliary losses**. They all use the same shared MLP, and ten total loss is a sum of losses across all layers. This is for training only. 
+
+  
