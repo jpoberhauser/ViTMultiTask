@@ -275,8 +275,10 @@ class DETR(nn.Module):
             nn.Linear(self.d_model, 4) # one per cx, cy, w, h
         )
 
-        self.class_mlp_kpt = nn.Linear(self.d_model, self.num_kpts)
 
+        ## Placeholder for keypoint head, 2 MLPs, one for class and one for kpt coords
+        # need to figure out how number of queries and num_kpts relate
+        self.class_mlp_kpt = nn.Linear(self.d_model, self.num_kpts)
         self.kpt_mlp = nn.Sequential(
             nn.Linear(self.d_model, self.d_model),
             nn.ReLU(),
