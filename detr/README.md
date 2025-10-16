@@ -3,72 +3,15 @@
 * then we replace with LW-DETR which replaces the resnet 50 backbone with a pure ViT to make it more lightweight. 
 
 
+Contributions of the LW-DETR paper:
 
-# DETR Architecture: High-Level Diagram
 
-## Input & Feature Extraction
-+-------------------+
-|     Image Input   |  <-- x_img ∈ R^(3 x H0 x W0) [
-+-------------------+
-          |
-          v
-+-------------------+
-|   CNN Backbone    |  <-- Conventional CNN (e.g., ResNet ) 
-| (Feature Extractor) |
-+-------------------+
-          |
-          v
-+-------------------+
-|  2D Image Features|  <-- Feature Map f ∈ R^(C x H x W)  
-+-------------------+
+*  Encoder Backbone: LW-DETR uses a plain Vision Transformer (ViT) encoder instead of the conventional CNN backbone (like ResNet) typically used in DETR
+  
+*  adopts interleaved window and global attentions (a simple modification akin to ViTDet) within the ViT encoder, replacing some computationally costly global self-attention layers with window self-attention to reduce complexity
 
-## Transformer Encoder (Global Context Reasoning)
-          |
-          |  (1x1 Conv reduces channels, flatten spatial dims) 
-          v
-+-------------------+
-|  Encoder Input    |  <-- Flattened Features + Spatial Positional Encoding
-+-------------------+
-          |
-          v
-+-------------------+
-| Transformer Encoder |  <-- Uses Multi-Head Self-Attention for global context
-+-------------------+
-          |
-          v
-+-------------------+
-|  Encoder Output   |  <-- Contextualized Image Features (Memory for Decoder) 
-+-------------------+
 
-## Transformer Decoder (Parallel Prediction)
-+------------------------------------------------------------------------------------------------------------------+
-| Inputs to Decoder:                                                                                               |
-| 1. Encoder Output (Memory) [9]                                                                                  |
-| 2. Learned Object Queries (Input Positional Embeddings, fixed small set N, e.g., N=100)        |
-+------------------------------------------------------------------------------------------------------------------+
-          |
-          v
-+---------------------+
-| Transformer Decoder |  <-- Decodes N objects in parallel using Self- & Cross-Attention 
-+---------------------+
-          |
-          v
-+------------------+------------------+--- ... ---+------------------+
-| Decoder Output 1 | Decoder Output 2 |   ...   | Decoder Output N |
-+------------------+------------------+--- ... ---+------------------+
-          |                  |                       |
-          v                  v                       v
-+--------+---------+ +--------+---------+       +--------+---------+
-|     FFN (Class)  | |     FFN (Class)  |       |     FFN (Class)  |  <-- Shared Feed Forward Networks 
-|      FFN (Box)   | |      FFN (Box)   |       |      FFN (Box)   |
-+--------+---------+ +--------+---------+       +--------+---------+
-          |                  |                       |
-          v                  v                       v
-+------------------+------------------+--- ... ---+------------------+
-| Final Prediction 1| Final Prediction 2|   ...   | Final Prediction N |  <-- Class + Bounding Box, or "No Object" (∅) 
-+------------------+------------------+--- ... ---+------------------+
-(Trained End-to-End with Bipartite Matching Loss to enforce unique predictions) [cx, cy, w, h]
-
+* LW-DETR uses a shallow DETR decoder with only 3 transformer decoder layers, significantly fewer than the 6 layers typically adopted by DETR and its variants, resulting in a measurable time reduction (e.g., from 1.4 ms to 0.7 ms for the tiny version)
 
 ## Main Recap on cost and loss
 
@@ -78,4 +21,4 @@
 
     * decoder layer outputs go into **auxiliary losses**. They all use the same shared MLP, and ten total loss is a sum of losses across all layers. This is for training only. 
 
-  
+   
