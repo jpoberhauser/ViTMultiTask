@@ -85,7 +85,7 @@ class TransformerEncoderLayer(nn.Module):
             out_ff = self.ff_dropouts[layer_idx](out_ff)
             out = out + out_ff # residual connection
 
-        # one last output norm
+        # one last output norm, attn weights is just for viz
         out = self.output_norm(out)
         return out, torch.stack(attn_weights, dim=1) # (batch_size, num_layers, num_heads, seq_len, seq_len)
 
@@ -217,7 +217,8 @@ class TransformerDecoderLayer(nn.Module):
         # remeber, the output of each layer in decoder goes mto box and class MLP for loss calc.
         self.output_norm = nn.LayerNorm(d_model)
 
-    def forward(self, query_objects, encoder_ouput, query_embedding, spatial_positional_encoding):
+    def forward(self, query_objects, encoder_ouput, query_embedding, 
+                spatial_positional_encoding):
         r"""
         query_objects: (batch_size, num_queries, d_model) these are the object queries
         encoder_output: (batch_size, seq_len, d_model) these are the image features from encoder
@@ -227,8 +228,38 @@ class TransformerDecoderLayer(nn.Module):
         out = query_objects
         decoder_outputs = []
         decoder_cross_attn_weights = []
+        for i in range(self.num_layers):
+            # norm, mha, res, 
+            in_attn = self.attn_norms[i](out)
+            q = in_attn + query_embedding
+            k = in_attn + query_embedding
+            out_attn, _ = self.attns[i](query = q,
+                                        key = k,
+                                        value = in_attn)
+            out_attn = self.attn_dropouts[i](out_attn)
+            out = out + out_attn # residual connection
 
-        return x
+            # norm, cross-attn, dropout, res
+            in_cross_attn = self.cross_attn_norms[i](out)
+            q = in_cross_attn + query_embedding
+            k = encoder_ouput + spatial_positional_encoding # 3cnoder features with spatial position
+            out_cross_attn, cross_attn_w = self.cross_attn[i](query = q,
+                                                               key = k,
+                                                               value = encoder_ouput)
+            
+            decoder_cross_attn_weights.append(cross_attn_w)
+            out_cross_attn = self.cross_attn_dropouts[i](out_cross_attn)
+            out = out + out_cross_attn # residual connection
+
+            
+            # norm, mlps, droppit, res
+            in_ff = self.ff_norms[i](out)
+            out_ff = self.ffs[i](in_ff)
+            out_ff = self.ff_dropouts[i](out_ff)
+            out = out + out_ff # residual connection
+            decoder_outputs.append(self.output_norm(out))
+        output = torch.stack(decoder_outputs, dim=1) # (batch_size, num_layers, num_queries, d_model)
+        return output, torch.stack(decoder_cross_attn_weights, dim=1) # (batch_size, num_layers, num_heads, num_queries, seq_len)
 
 
 
@@ -328,5 +359,13 @@ class DETR(nn.Module):
 
         # image features are still a gird, we need to convert to a sequence before it goes to transformer
         conv_out = (conv_out.reshape(batch_size, d_model, feat_h * feat_w).transpose(1,2))
-        encode_out = self.encoder(conv_out, spatial_pos_embed) # <- pass in outs from conv and spatial positional embeddings
+        enc_output, enc_attn_weights = self.encoder(conv_out, spatial_pos_embed) # <- pass in outs from conv and spatial positional embeddings
         # encode_out -> [B, feat_h*feat_w, d_model]
+        query_objects = torch.zeros_like(self.query_embed.unsqueeze(0).repeat(batch_size,1,1)) # all zero tensor
+        # query_objects -> [B, num_queries, d_model] these are the object queries
+        decoder_outs, deco_attn_weights = self.decoder(query_objects,
+                                    enc_output,
+                                    self.query_embed.unsqueeze(0).repeat(batch_size,1,1),#actual embeddings for the queries
+                                    spatial_pos_embed)
+
+        # decoder takes in the encoder ouput _and_ the object queries
