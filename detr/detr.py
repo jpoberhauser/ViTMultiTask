@@ -63,8 +63,31 @@ class TransformerEncoderLayer(nn.Module):
         # we need one norm for encoder output
         self.output_norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, ):
-        return x
+    def forward(self, x, spatial_positional_embedding):
+        out = x
+        attn_weights = []
+        for layer_idx in range(self.num_layers): # go through each layer
+            # norm, mha, 
+            in_attn = self.attn_norms[layer_idx](out)
+            # add spatial positional embedding to in_attn
+            q = in_attn + spatial_positional_embedding
+            k = in_attn + spatial_positional_embedding
+            out_attn, attn_w = self.attns[layer_idx](query = q,
+                                                     key =  k,
+                                                      value=  in_attn)
+            attn_weights.append(attn_w)
+            out_attn = self.attn_dropouts[layer_idx](out_attn)
+            out = out + out_attn # residual connection
+
+            # norm, mlp, residual
+            in_ff = self.ff_norms[layer_idx](out)
+            out_ff = self.ffs[layer_idx](in_ff)
+            out_ff = self.ff_dropouts[layer_idx](out_ff)
+            out = out + out_ff # residual connection
+
+        # one last output norm
+        out = self.output_norm(out)
+        return out, torch.stack(attn_weights, dim=1) # (batch_size, num_layers, num_heads, seq_len, seq_len)
 
 
 def get_spatial_position_embedding(pos_emb_dim, feat_map):
@@ -305,4 +328,5 @@ class DETR(nn.Module):
 
         # image features are still a gird, we need to convert to a sequence before it goes to transformer
         conv_out = (conv_out.reshape(batch_size, d_model, feat_h * feat_w).transpose(1,2))
-        encode_out = self.encoder(conv_out)
+        encode_out = self.encoder(conv_out, spatial_pos_embed) # <- pass in outs from conv and spatial positional embeddings
+        # encode_out -> [B, feat_h*feat_w, d_model]
