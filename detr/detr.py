@@ -257,7 +257,8 @@ class TransformerDecoderLayer(nn.Module):
             out_ff = self.ffs[i](in_ff)
             out_ff = self.ff_dropouts[i](out_ff)
             out = out + out_ff # residual connection
-            decoder_outputs.append(self.output_norm(out))
+            decoder_outputs.append(self.output_norm(out)) # decoder returns these
+
         output = torch.stack(decoder_outputs, dim=1) # (batch_size, num_layers, num_queries, d_model)
         return output, torch.stack(decoder_cross_attn_weights, dim=1) # (batch_size, num_layers, num_heads, num_queries, seq_len)
 
@@ -363,9 +364,174 @@ class DETR(nn.Module):
         # encode_out -> [B, feat_h*feat_w, d_model]
         query_objects = torch.zeros_like(self.query_embed.unsqueeze(0).repeat(batch_size,1,1)) # all zero tensor
         # query_objects -> [B, num_queries, d_model] these are the object queries
-        decoder_outs, deco_attn_weights = self.decoder(query_objects,
+        query_objects, deco_attn_weights = self.decoder(query_objects,
                                     enc_output,
                                     self.query_embed.unsqueeze(0).repeat(batch_size,1,1),#actual embeddings for the queries
                                     spatial_pos_embed)
-
+        #query_ojects = [num_decoder_layers, B, num_queries,d_model]
         # decoder takes in the encoder ouput _and_ the object queries
+
+        cls_output = self.class_mlp(query_objects)
+        # (num_decoder_layers, B, num_queries, num_classes)
+        bbox_output = self.bbox_mlp(query_objects).sigmoid() # sigmoid to keep in [0,1]
+         # (num_decoder_layers, B, num_queries, 4)
+
+
+        losses = defaultdict(list)
+        detections = []
+        detr_output = {}
+
+        if self.training:
+            num_decoder_layers = self.num_decoder_layers
+            # permofrm matching for each decoder layer
+            # ----   matching --------
+            for decoder_idx in range(num_decoder_layers): # aux loss <- this happens every single decoder layer!!
+                cls_idx_output = cls_output[decoder_idx]
+                bbox_idx_output = bbox_output[decoder_idx]
+                with torch.no_grad(): # mathcin ghappens without gradients! Not smooth. 
+                    # concat all prediction boxes and classes across batch
+                    class_prob = cls_idx_output.reshape(-1, self.num_classes).softmax(-1)
+                    # class_prob -> (B* num_queries, num_classes)
+                    pred_boxes = bbox_idx_output.reshape(-1,4)
+                    # pred_boxes -> (B* num_queries, 4)
+
+                    # concat all target boxes and classes across batch
+                    target_labels = torch.cat([t['labels'] for t in targets])
+                    target_boxes = torch.cat([t['boxes'] for t in targets])
+
+                    # Get cost, for classification its the  1 - prob
+                    cost_classification = -class_prob[:, target_labels] # (B* num_queries, total_num_target_boxes)
+
+                    # DETR predicts cx, cy, w, h, we need to convert to x1yx2y2 for giou
+                    # giou cost
+                    pred_boxes_x1y1x2y2 = torchvision.ops.box_convert(pred_boxes,
+                                                                      in_fmt = 'cxcywh',
+                                                                      out_fmt = 'xyxy')
+                    cost_localization_l1 = torch.cdist(pred_boxes_x1y1x2y2, target_boxes, p=1) # (B* num_queries, total_num_target_boxes)
+                    cost_localization_giou = -torchvision.ops.generalized_box_iou(pred_boxes_x1y1x2y2,
+                                                                                 target_boxes) # (B* num_queries, total_num_target_boxes)
+                    total_cost = (self.l1_cost_weight * cost_localization_l1 +
+                                  self.giou_cost_weight * cost_localization_giou +
+                                  self.cls_cost_weight * cost_classification)
+                    # aggregated cost matrix
+                    total_cost = total_cost.reshape(batch_size, self.num_queries, -1).cpu()
+
+                    num_targets_per_image = [len(t['labels']) for t in targets]
+                    total_cost_per_batch_image = total_cost.split(num_targets_per_image, dim=-1)
+                    # now we match
+                    match_indices = [] # hold list of assignements per batch
+                    for batch_idx in range(batch_size):
+                        batch_idx_pred, batch_idx_target = linear_sum_assignment( #< hungarian algo
+                            total_cost_per_batch_image[batch_idx][batch_idx])
+                        match_indices.append((torch.as_tensor(batch_idx_pred, dtype=torch.int64),
+                                              torch.as_tensor(batch_idx_target, dtype=torch.int64)))
+                        # match indeces -> 2 sequnces, list of matched predictions and the second is amtched target box indexes. 
+                        # first element of both are matched to each other, the second element of both are matched to each other, etc.
+                        # only has prediction box indeces that are matched. We need to figure out what to do with unmatched ones later <- (unassigned)
+                        # ([pred_box_a1,...], t[target_box_a1,,...]),
+                        # ([pred_box_a2, ], [t[target_box_a2,...]]),
+                        # has the assignment pairs for ith batch image. 
+
+                # ------- end matching --------
+                pred_batch_idxs = torch.cat([
+                    torch.ones_like(pred_idx) * i
+                    for i, (pred_idx, _) in enumerate(match_indices)
+                ])
+                pred_query_idx = torch.cat([pred_idx for (pred_idx, _) in match_indices])
+
+                valid_obj_target_cls = torch.cat([
+                    target['labels'][target_obj_idx]
+                    for target, (_, target_obj_idx) in zip(targets, match_indices)
+                ])# get sequence of target box indeces, get the lables for gt boxes at those indeces
+
+                target_classes = torch.full(
+                    clas_idx_output.shape[:2],
+                    fill_value = self.bg_class_idx, # initially everything is set as background
+                    dtype = torch.int64,
+                    device = cls_idx_output.device
+                )
+                # for predicted boxes that are assigned to a tagert in hungarian algo
+                # we update those classes from background to target label
+                # everything else stays as background
+                target_classes[(pred_batch_idxs, pred_query_idx)] = valid_obj_target_cls
+
+                # We need to ensure background class is not deisproportinoately atteneded to in the model,
+                # so we weight it
+                cls_weights = torch.ones(self.num_classes)
+                cls_weights[self.bg_class_idx] = self.bg_class_idx #(0.1) is default
+
+                # now we're ready for classification loss
+                loss_cls = torch.nn.functional.cross_entropy(
+                    cls_idx_output.reshape(-1, self.num_classes),
+                    target_classes.reshape(-1),
+                    cls_weights.to(cls_idx_output)
+                )
+
+                # now we need localization loss, 2 parts
+                matched_pred_boxes = bbox_idx_output[pred_batch_idxs, pred_query_idx]
+                # we only care about matched boxes
+                # get targets for those
+                target_boxes = torch.cat([
+                    target['boxes'][target_obj_idx]
+                           for target, (_, target_obj_idx) in zip(targets, match_indices)],
+                           dim=0
+                )
+
+                matched_pred_boxes_x1y1x2y2 = torchvision.ops.box_convert(
+                    matched_pred_boxes, in_fmt = 'cxcywh',
+                    out_fmt = 'xyxy'
+                )
+                # L1 Loss
+                loss_l1_box = torch.nn.functional.l1_loss(
+                    matched_pred_boxes_x1y1x2y2,
+                    target_boxes,
+                    reduction = 'none'
+                )
+                loss_l1_box = loss_l1_box.sum() / matched_pred_boxes.shape[0]
+
+                # GIoU loss
+                loss_giou = torchvision.ops.generalized_box_iou_loss(
+                    matched_pred_boxes_x1y1x2y2,
+                    target_boxes,
+                )
+
+                loss_giou = loss_giou.sum() / matched_pred_boxes.shape[0]
+
+                losses['classificatoin'].append(loss_cls * self.cls_cost_weight)
+                losses['bbox_regression'].append(
+                    loss_l1_box * self.l1_cost_weight +
+                    loss_giou * self.giou_cost_weight
+                )
+
+            detr_output['loss'] = losses # need to update for every layer, and thenn we'll use for backward pass
+
+        else:
+            #inference code (no backprop)
+            # no matching and no loss nceessary, no need to get intere=mediate layer outputs
+            cls_output = cls_output[-1] #last layer outs
+            bbox_output = bbox_output[-1]# last layer outs
+
+            prob = torch.nn.functional.softmax(cls_output, -1) # confs
+
+            # get all query boxes and their best foreground class as label
+            if self.bg_class_idx == 0:
+                scores, labels = prob[..., 1:].max(-1)
+                labels = labels + 1
+            else:
+                scores, labels =  prob[..., 1:].max(-1)
+
+            #convert back to x1y1x2y2
+            boxes = torchvision.ops.box_convert(bbox_output,
+                                                in_fmt = 'cxcywh',
+                                                out_fmt = 'xyxy')
+            
+            for batch_idx in range(boxes.shape[0]):
+                scores_idx = scores[batch_idx]
+                labels_idx = labels[batch_idx]
+                boxes_idx = boxes[batch_idx]
+
+            detr_output['detections'] = detections
+            detr_output['enc_attn'] = enc_attn_weights # for vis
+            detr_output['dec_attn'] = deco_attn_weights# for vis
+        return detr_output
+
