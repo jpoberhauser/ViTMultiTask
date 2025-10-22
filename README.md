@@ -16,7 +16,13 @@ We could then add the detection queries into [ED-POSE](https://github.com/IDEA-R
 Other option could be [DETR-POSE](https://github.com/SebastianJanampa/DETRPose) which extends the set prediction problem to kpts. 
 
 
-## Other options
+## Speed ups
+
+* Adaptive Patch Sizes [APS](https://rccchoudhury.github.io/apt/) reduces amout of patches
+
+* Deformable Attention [Def Att](https://arxiv.org/pdf/2201.00520)
+
+* Deformable DETR [Def-Detr](https://arxiv.org/abs/2010.04159)
 
 
 
